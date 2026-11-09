@@ -76,7 +76,7 @@ launchd jobs on this Mac run my coding agent as me on a schedule (`~/.local/shar
 <!-- pr-pollers:end -->
 ```
 
-- **Run again.** To make a poller act on an item again without a new trigger, delete that item's lines from `~/.local/state/pr-pollers/<name>/handled` (`review` uses `pr-review-seen` in the same folder). `review` still skips SHAs the user already reviewed on GitHub, and `build` still skips issues with an open PR.
+- **Run again.** To make `build` or `maintain` act on an item again without a new trigger, delete that item's lines from `~/.local/state/pr-pollers/<name>/handled`. `build` still skips issues with an open PR. `review` re-checks GitHub and skips any SHA the user already reviewed, so deleting from its `pr-review-seen` file does nothing; for a fresh review, push a new commit, or dismiss the existing review and delete the line.
 
 ## Update
 
