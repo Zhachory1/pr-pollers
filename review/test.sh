@@ -19,7 +19,16 @@ esac
 printf '%s' "\$json" | jq -r "\$jqf"
 FAKE
 chmod +x "$tmp/gh"
-export PATH="$tmp:$PATH" PR_REVIEW_STATE_DIR="$tmp/state" PR_REVIEW_AGENT_CMD="echo >> $tmp/agent.log"
+# Fake agent: records the prompt and "posts" a review at the current SHA, unless told it posted nothing.
+cat > "$tmp/agent" <<AGENT
+#!/bin/bash
+echo "\$1" >> "$tmp/agent.log"
+if [ ! -e "$tmp/agent-silent" ]; then
+  jq -c --arg s "\$(cat "$tmp/sha")" '. + [{"id":99,"user":{"login":"me"},"commit_id":\$s}]' "$tmp/reviews" > "$tmp/reviews.new" && mv "$tmp/reviews.new" "$tmp/reviews"
+fi
+AGENT
+chmod +x "$tmp/agent"
+export PATH="$tmp:$PATH" PR_REVIEW_STATE_DIR="$tmp/state" PR_REVIEW_AGENT_CMD="$tmp/agent"
 # Skip self-update for runs from this checkout so the test never moves the dev working copy to a tag.
 export PR_POLLERS_UPDATED=1
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -42,4 +51,12 @@ echo '[{"id":3,"user":{"login":"me"},"commit_id":"ddd"}]' > "$tmp/reviews"
 [ "$(wc -l < "$tmp/agent.log")" -eq 2 ] || fail "SHA already reviewed on GitHub was reviewed again"
 grep -Fxq 'o/r#1@ddd' "$tmp/state/pr-review-seen" || fail "SHA reviewed on GitHub not recorded as seen"
 
+# Agent exits 0 but posts nothing: the SHA is not recorded and the next pass retries.
+echo eee > "$tmp/sha"; touch "$tmp/agent-silent"; n="$(wc -l < "$tmp/agent.log")"
+./poller.sh >/dev/null 2>"$tmp/stderr"
+grep -Fxq 'o/r#1@eee' "$tmp/state/pr-review-seen" && fail "SHA recorded without a posted review"
+grep -q "no review posted for o/r#1@eee" "$tmp/stderr" || fail "missing review not logged"
+rm "$tmp/agent-silent"; ./poller.sh >/dev/null 2>&1
+[ "$(wc -l < "$tmp/agent.log")" -eq $((n + 2)) ] || fail "silent run not retried"
+grep -Fxq 'o/r#1@eee' "$tmp/state/pr-review-seen" || fail "posted review not recorded"
 echo "ok"

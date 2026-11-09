@@ -64,7 +64,15 @@ while IFS=$'\t' read -r repo number url; do
   echo "$(date -u +%FT%TZ) reviewing $key"
   prompt="Use the pr-review skill to review $url at head SHA $sha. Post the review per the skill's delivery contract."
   if run_agent "$PR_REVIEW_AGENT_CMD" "$PWD" "$prompt"; then
-    echo "$key" >> "$SEEN"
+    # Record the SHA only if a review by me at this SHA is now on GitHub. Agents can exit 0 without
+    # posting (e.g. the pr-review skill is not installed); those runs must be retried.
+    posted="$(gh api "repos/$repo/pulls/$number/reviews" --paginate \
+      --jq ".[] | select(.user.login == \"$me\" and .commit_id == \"$sha\") | .id" 2>/dev/null || true)"
+    if [ -n "$posted" ]; then
+      echo "$key" >> "$SEEN"
+    else
+      echo "$(date -u +%FT%TZ) no review posted for $key; will retry next pass (is the pr-review skill installed for this agent?)" >&2
+    fi
   else
     echo "$(date -u +%FT%TZ) review failed for $key; will retry next pass" >&2
   fi
